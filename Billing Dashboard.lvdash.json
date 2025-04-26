@@ -1,0 +1,462 @@
+{
+  "datasets" : [ {
+    "name" : "3b712858",
+    "displayName" : "select_workspace_id",
+    "query" : "SELECT DISTINCT(workspace_id)\r\nFROM system.billing.usage\r\nWHERE usage_date BETWEEN :param_date.min AND :param_date.max",
+    "parameters" : [ {
+      "displayName" : "param_date",
+      "keyword" : "param_date",
+      "dataType" : "DATE",
+      "complexType" : "RANGE",
+      "defaultSelection" : {
+        "range" : {
+          "dataType" : "DATE",
+          "min" : {
+            "value" : "now-1y/y"
+          },
+          "max" : {
+            "value" : "now/y"
+          }
+        }
+      }
+    } ]
+  }, {
+    "name" : "f828a60c",
+    "displayName" : "overview",
+    "query" : "WITH\r\nusage AS (\r\n    SELECT workspace_id, sku_name, usage_unit, usage_date, usage_quantity, billing_origin_product\r\n    FROM system.billing.usage\r\n    WHERE if(:param_workspace_id='<ALL WORKSPACES>', true, workspace_id = :param_workspace_id)\r\n    AND usage_date BETWEEN :param_date.min AND :param_date.max\r\n),\r\nlist_prices AS (\r\n    SELECT\r\n        price_start_time,\r\n        COALESCE(price_end_time, DATE_ADD(CURRENT_DATE, 1)) AS price_end_time,\r\n        sku_name,\r\n        usage_unit,\r\n        pricing.default AS pricing\r\n    FROM system.billing.list_prices\r\n    WHERE currency_code = 'USD'\r\n)\r\nSELECT u.workspace_id, u.sku_name, u.usage_date, u.billing_origin_product, u.usage_quantity*p.pricing AS cost\r\nFROM usage AS u\r\nLEFT JOIN list_prices AS p\r\n    ON u.sku_name = p.sku_name\r\n    AND u.usage_unit = p.usage_unit\r\n    AND u.usage_date BETWEEN p.price_start_time AND p.price_end_time\r\n",
+    "parameters" : [ {
+      "displayName" : "param_date",
+      "keyword" : "param_date",
+      "dataType" : "DATE",
+      "complexType" : "RANGE",
+      "defaultSelection" : {
+        "range" : {
+          "dataType" : "DATE",
+          "min" : {
+            "value" : "now-1y/y"
+          },
+          "max" : {
+            "value" : "now/y"
+          }
+        }
+      }
+    }, {
+      "displayName" : "param_workspace_id",
+      "keyword" : "param_workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "<ALL WORKSPACES>"
+          } ]
+        }
+      }
+    } ]
+  }, {
+    "name" : "c52751af",
+    "displayName" : "未命名的資料集 1",
+    "query" : "SELECT *\r\nFROM system.billing.list_prices"
+  }, {
+    "name" : "905352b3",
+    "displayName" : "未命名的資料集 2",
+    "query" : "with\r\n-- parse workspaces json\r\nworkspace as (select distinct(workspace_id) as workspace_id, null as workspace_name from system.billing.usage ),\r\n-- apply date filter\r\nusage_with_ws_filtered_by_date as (\r\n  select\r\n    case\r\n      when workspace_name is null then concat('id: ', u.workspace_id)\r\n      else concat(workspace_name, ' (id: ', u.workspace_id, ')')\r\n    end as workspace,\r\n    u.*\r\n  from system.billing.usage as u\r\n  left join workspace\r\n    on u.workspace_id = workspace.workspace_id\r\n  where u.usage_date between :param_start_date and :param_end_date\r\n),\r\n-- apply workspace filter\r\nusage_filtered as (\r\n  select\r\n    *\r\n  from usage_with_ws_filtered_by_date\r\n  where if(:param_workspace_id='<ALL WORKSPACES>', true, workspace = :param_workspace_id) -- all workspaces under account, or single workspace\r\n),\r\n-- calc list priced usage in USD\r\nprices as (\r\n  select coalesce(price_end_time, date_add(current_date, 1)) as coalesced_price_end_time, *\r\n  from system.billing.list_prices\r\n  where currency_code = 'USD'\r\n),\r\nlist_priced_usd as (\r\n  select\r\n    coalesce(u.usage_quantity * p.pricing.default, 0) as usage_usd,\r\n    date_trunc('QUARTER', usage_date) as usage_quarter,\r\n    date_trunc('MONTH', usage_date) as usage_month,\r\n    date_trunc('WEEK', usage_date) as usage_week,\r\n    u.*\r\n  from usage_filtered as u\r\n  left join prices as p\r\n    on u.sku_name=p.sku_name\r\n    and u.usage_unit=p.usage_unit\r\n    and (u.usage_end_time between p.price_start_time and p.coalesced_price_end_time)\r\n)\r\n-- query\r\nselect * from list_priced_usd\r\n",
+    "parameters" : [ {
+      "displayName" : "param_start_date",
+      "keyword" : "param_start_date",
+      "dataType" : "DATE",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "DATE",
+          "values" : [ {
+            "value" : "2024-01-01T00:00:00.000"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "param_end_date",
+      "keyword" : "param_end_date",
+      "dataType" : "DATE",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "DATE",
+          "values" : [ {
+            "value" : "2025-12-31T00:00:00.000"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "param_workspace_id",
+      "keyword" : "param_workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : { }
+    } ]
+  }, {
+    "name" : "b40c2b8d",
+    "displayName" : "未命名的資料集 3",
+    "query" : "SELECT * FROM system.billing.usage"
+  } ],
+  "pages" : [ {
+    "name" : "ef5eb8e5",
+    "displayName" : "未命名頁面",
+    "layout" : [ {
+      "widget" : {
+        "name" : "80d6e7a0",
+        "queries" : [ {
+          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020dddcad1ff8a84da86c4e61bf11_param_date",
+          "query" : {
+            "datasetName" : "3b712858",
+            "parameters" : [ {
+              "name" : "param_date",
+              "keyword" : "param_date"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e3326b13c99cd5855f57661079_param_date",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "parameters" : [ {
+              "name" : "param_date",
+              "keyword" : "param_date"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-date-range-picker",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "param_date",
+              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020dddcad1ff8a84da86c4e61bf11_param_date"
+            }, {
+              "parameterName" : "param_date",
+              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e3326b13c99cd5855f57661079_param_date"
+            } ]
+          },
+          "selection" : {
+            "defaultSelection" : {
+              "range" : {
+                "dataType" : "DATE",
+                "min" : {
+                  "value" : "now-3M/M"
+                },
+                "max" : {
+                  "value" : "now/M"
+                }
+              }
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Date"
+          }
+        }
+      },
+      "position" : {
+        "x" : 4,
+        "y" : 0,
+        "width" : 2,
+        "height" : 1
+      }
+    }, {
+      "widget" : {
+        "name" : "0d9b14f1",
+        "queries" : [ {
+          "name" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020dddcad1ff8a84da86c4e61bf11_workspace_id",
+          "query" : {
+            "datasetName" : "3b712858",
+            "fields" : [ {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            }, {
+              "name" : "workspace_id_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e3326b13c99cd5855f57661079_param_workspace_id",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "parameters" : [ {
+              "name" : "param_workspace_id",
+              "keyword" : "param_workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "param_workspace_id",
+              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e3326b13c99cd5855f57661079_param_workspace_id"
+            }, {
+              "fieldName" : "workspace_id",
+              "displayName" : "workspace_id",
+              "queryName" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020dddcad1ff8a84da86c4e61bf11_workspace_id"
+            } ]
+          },
+          "disallowAll" : false,
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Workspace"
+          }
+        }
+      },
+      "position" : {
+        "x" : 4,
+        "y" : 1,
+        "width" : 2,
+        "height" : 1
+      }
+    }, {
+      "widget" : {
+        "name" : "98136759",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "fields" : [ {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            }, {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "pie",
+          "encodings" : {
+            "angle" : {
+              "fieldName" : "sum(cost)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Sum of cost"
+            },
+            "color" : {
+              "fieldName" : "workspace_id",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "workspace_id"
+            }
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 6,
+        "width" : 2,
+        "height" : 5
+      }
+    }, {
+      "widget" : {
+        "name" : "bd4156b2",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "fields" : [ {
+              "name" : "daily(usage_date)",
+              "expression" : "DATE_TRUNC(\"DAY\", `usage_date`)"
+            }, {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "line",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "daily(usage_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "axis" : {
+                "hideTitle" : true
+              },
+              "displayName" : "usage_date"
+            },
+            "y" : {
+              "fieldName" : "sum(cost)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "axis" : {
+                "hideTitle" : true
+              },
+              "displayName" : "Sum of cost"
+            }
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 2,
+        "width" : 6,
+        "height" : 4
+      }
+    }, {
+      "widget" : {
+        "name" : "f3de67f8",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "fields" : [ {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            }, {
+              "name" : "sku_name",
+              "expression" : "`sku_name`"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "pie",
+          "encodings" : {
+            "angle" : {
+              "fieldName" : "sum(cost)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Sum of cost"
+            },
+            "color" : {
+              "fieldName" : "sku_name",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "sku_name"
+            }
+          }
+        }
+      },
+      "position" : {
+        "x" : 2,
+        "y" : 6,
+        "width" : 2,
+        "height" : 5
+      }
+    }, {
+      "widget" : {
+        "name" : "e2bd7694",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "fields" : [ {
+              "name" : "countdistinct(cost)",
+              "expression" : "COUNT(DISTINCT `cost`)"
+            }, {
+              "name" : "billing_origin_product",
+              "expression" : "`billing_origin_product`"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "pie",
+          "encodings" : {
+            "angle" : {
+              "fieldName" : "countdistinct(cost)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Count of Unique cost"
+            },
+            "color" : {
+              "fieldName" : "billing_origin_product",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "billing_origin_product"
+            }
+          }
+        }
+      },
+      "position" : {
+        "x" : 4,
+        "y" : 6,
+        "width" : 2,
+        "height" : 5
+      }
+    }, {
+      "widget" : {
+        "name" : "781a384e",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "fields" : [ {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "counter",
+          "encodings" : {
+            "value" : {
+              "fieldName" : "sum(cost)",
+              "displayName" : "Sum of cost"
+            }
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 0,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "5432690a",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "f828a60c",
+            "fields" : [ {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "counter",
+          "encodings" : {
+            "value" : {
+              "fieldName" : "sum(cost)",
+              "displayName" : "Sum of cost"
+            }
+          }
+        }
+      },
+      "position" : {
+        "x" : 2,
+        "y" : 0,
+        "width" : 2,
+        "height" : 2
+      }
+    } ]
+  } ]
+}
