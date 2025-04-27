@@ -16,12 +16,9 @@ st.set_page_config(
 st.markdown(
     """
         <style>
-            [data-testid="stDecoration"] {
-                display: none;
-            }
             .stAppHeader {
-                background-color: rgba(255, 255, 255, 0.0);  /* Transparent background */
-                visibility: visible;  /* Ensure the header is visible */
+                background-color: rgba(255, 255, 255, 0.0);
+                visibility: visible;
             }
 
             .block-container {
@@ -34,9 +31,13 @@ st.markdown(
             [data-testid="stSidebar"][aria-expanded="true"]{
                 min-width: 500px;
             }
+
+            .stSidebar h1 {
+                font-size: 30px;
+            }
         </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
 def clear_chat_history():
@@ -59,11 +60,11 @@ chat_avatar  = {
 
 # Chat in Streamlit Sidebar
 with st.sidebar:
-    col_l, col_r = st.columns([0.9, 0.1], vertical_alignment="bottom")
-    col_l.title("Billing AI Assistant")
-    col_r.button(":material/refresh:", on_click=clear_chat_history, help="Clear chat history")
+    col_l, col_r = st.columns([0.87, 0.13], vertical_alignment="bottom")
+    col_l.markdown("# Billing AI Assistant")
+    col_r.button(":material/refresh:", on_click=clear_chat_history, help="Clear chat history", use_container_width=True)
 
-    chat_window = st.container(height=800)
+    chat_window = st.container(height=600)
 
     for message in st.session_state.messages:
         role = message["role"]
@@ -104,8 +105,23 @@ with st.sidebar:
                 st.write(chunk.delta["content"])
             st.session_state.messages.append({"role": role, "content": chunk.delta["content"]})
 
-st.title("Databricks Billing Dashboard")
-st.markdown("Effortlessly monitor your Databricks usage and costs with the **Billing Dashboard**, complemented by an **Billing AI Assistant** ready to address all your billing-related questions.")
+# Streamlit Title
+text_title = (
+    "# Databricks "
+    "<span style='background: linear-gradient(to right, #dc2424, #4a569d);color:transparent;background-clip:text;'>Billing</span>"
+    " Dashboard"
+)
+test_subtitle = (
+    "Effortlessly monitor your Databricks usage and costs with the "
+    "<span style='background: linear-gradient(to right, #dc2424, #4a569d);color:transparent;background-clip:text;font-weight:bold;'>Billing Dashboard</span>"
+    ", complemented by an "
+    "<span style='background: linear-gradient(to right, #dc2424, #4a569d);color:transparent;background-clip:text;font-weight:bold;'>Billing AI Assistant</span>"
+    " ready to address all your billing-related questions."
+)
+
+st.markdown(text_title, unsafe_allow_html=True)
+st.markdown(test_subtitle, unsafe_allow_html=True)
+
 
 # Databricks Dashboard Ebbedding
 dashboard_url = "https://adb-922119294322318.18.azuredatabricks.net/embed/dashboardsv3/01f020ddcaef173d83c74386d1319b26"
