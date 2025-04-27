@@ -1,0 +1,4 @@
+streamlit==1.44.1
+python-dotenv
+databricks-sdk==0.50.0
+databricks-sdk[openai]
