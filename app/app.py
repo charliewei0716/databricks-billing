@@ -71,6 +71,8 @@ with st.sidebar:
         with chat_window.chat_message(name=role, avatar=chat_avatar[role]):
             st.write(f"**{role.capitalize()}**")
             st.write(message["content"])
+            if message.get("ans_from_docs"):
+                st.badge("**Answer from Databricks Document**", icon=":material/check:", color="green")
 
     if prompt := st.chat_input("Ask something.."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -92,18 +94,25 @@ with st.sidebar:
                     stream=True,
                 )
 
+        from_docs = False
         for chunk in response:
             if chunk.delta.get("name") == "Genie":
                 role = "genie"
             elif not chunk.delta.get("name"):
                 role = "assistant"
             else:
+                from_docs = True
                 continue
             
             with chat_window.chat_message(name=role, avatar=chat_avatar[role]):
                 st.write(f"**{role.capitalize()}**")
                 st.write(chunk.delta["content"])
-            st.session_state.messages.append({"role": role, "content": chunk.delta["content"]})
+                if role == "assistant" and from_docs:
+                    st.badge("**Answer from Databricks Document**", icon=":material/check:", color="green")
+            
+            ans_from_docs = role == "assistant" and from_docs
+            st.session_state.messages.append({"role": role, "content": chunk.delta["content"], "ans_from_docs": ans_from_docs})
+
 
 # Streamlit Title
 text_title = (
