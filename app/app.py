@@ -134,4 +134,4 @@ st.markdown(test_subtitle, unsafe_allow_html=True)
 
 # Databricks Dashboard Ebbedding
 dashboard_url = "https://adb-922119294322318.18.azuredatabricks.net/embed/dashboardsv3/01f020ddcaef173d83c74386d1319b26"
-components.iframe(dashboard_url, height=800)
+components.iframe(dashboard_url, height=1100)
