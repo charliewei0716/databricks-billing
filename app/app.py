@@ -29,7 +29,7 @@ st.markdown(
             }
 
             [data-testid="stSidebar"][aria-expanded="true"]{
-                min-width: 500px;
+                min-width: 600px;
             }
 
             .stSidebar h1 {
@@ -50,6 +50,7 @@ client = w.serving_endpoints.get_open_ai_client()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    st.session_state.sample = None
 
 chat_avatar  = {
     "user": ":material/person:",
@@ -62,9 +63,11 @@ chat_avatar  = {
 with st.sidebar:
     col_l, col_r = st.columns([0.87, 0.13], vertical_alignment="bottom")
     col_l.markdown("# Billing AI Assistant")
-    col_r.button(":material/refresh:", on_click=clear_chat_history, help="Clear chat history", use_container_width=True)
+    col_r.button(
+        ":material/refresh:", on_click=clear_chat_history, help="Clear chat history", use_container_width=True
+    )
 
-    chat_window = st.container(height=600)
+    chat_window = st.container(height=700)
 
     for message in st.session_state.messages:
         role = message["role"]
@@ -74,7 +77,20 @@ with st.sidebar:
             if message.get("ans_from_docs"):
                 st.badge("**Answer from Databricks Document**", icon=":material/check:", color="green")
 
-    if prompt := st.chat_input("Ask something.."):
+    if not (st.session_state.messages or st.session_state.sample):
+        with chat_window:
+            options = [
+                "What is the total DBU expenditure for April 2025?",
+                "What is a Databricks job?",
+                "What is the pricing for PREMIUM_JOBS_SERVERLESS_COMPUTE_ASIA_SOUTHEAST?",
+            ]
+            if select := st.pills(
+                "Sample", options, selection_mode="single", label_visibility='collapsed',
+            ):
+                st.session_state.sample = select
+                st.rerun()
+
+    if prompt := st.chat_input("Ask something..") or st.session_state.sample:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_window.chat_message(name="user", avatar=chat_avatar["user"]):
             st.write("**User**")
@@ -112,7 +128,8 @@ with st.sidebar:
             
             ans_from_docs = role == "assistant" and from_docs
             st.session_state.messages.append({"role": role, "content": chunk.delta["content"], "ans_from_docs": ans_from_docs})
-
+        st.session_state.sample = None
+        
 
 # Streamlit Title
 text_title = (
