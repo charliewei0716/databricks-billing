@@ -80,6 +80,7 @@ with st.sidebar:
     if not (st.session_state.messages or st.session_state.sample):
         with chat_window:
             options = [
+                "Why do Databricks Classic Jobs incur infrastructure costs?",
                 "What is the total DBU expenditure for April 2025?",
                 "What is a Databricks job?",
                 "What is the pricing for PREMIUM_JOBS_SERVERLESS_COMPUTE_ASIA_SOUTHEAST?",
@@ -151,4 +152,4 @@ st.markdown(test_subtitle, unsafe_allow_html=True)
 
 # Databricks Dashboard Ebbedding
 dashboard_url = "https://adb-922119294322318.18.azuredatabricks.net/embed/dashboardsv3/01f020ddcaef173d83c74386d1319b26"
-components.iframe(dashboard_url, height=1100)
+components.iframe(dashboard_url, height=1200)
