@@ -50,7 +50,7 @@ client = w.serving_endpoints.get_open_ai_client()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    st.session_state.sample = None
+    st.session_state.prompt = None
 
 chat_avatar  = {
     "user": ":material/person:",
@@ -77,7 +77,7 @@ with st.sidebar:
             if message.get("ans_from_docs"):
                 st.badge("**Answer from Databricks Document**", icon=":material/check:", color="green")
 
-    if not (st.session_state.messages or st.session_state.sample):
+    if not (st.session_state.messages or st.session_state.prompt):
         with chat_window:
             options = [
                 "Why do Databricks Classic Jobs incur infrastructure costs?",
@@ -88,10 +88,13 @@ with st.sidebar:
             if select := st.pills(
                 "Sample", options, selection_mode="single", label_visibility='collapsed',
             ):
-                st.session_state.sample = select
+                st.session_state.prompt = select
                 st.rerun()
 
-    if prompt := st.chat_input("Ask something..") or st.session_state.sample:
+    if prompt := st.chat_input("Ask something..") or st.session_state.prompt:
+        if not st.session_state.prompt:
+            st.session_state.prompt = prompt
+            st.rerun()
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_window.chat_message(name="user", avatar=chat_avatar["user"]):
             st.write("**User**")
@@ -129,7 +132,7 @@ with st.sidebar:
             
             ans_from_docs = role == "assistant" and from_docs
             st.session_state.messages.append({"role": role, "content": chunk.delta["content"], "ans_from_docs": ans_from_docs})
-        st.session_state.sample = None
+        st.session_state.prompt = None
         
 
 # Streamlit Title
