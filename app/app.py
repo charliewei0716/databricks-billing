@@ -81,9 +81,8 @@ with st.sidebar:
         with chat_window:
             options = [
                 "Why do Databricks Classic Jobs incur infrastructure costs?",
-                "What is the total DBU expenditure for April 2025?",
-                "What is a Databricks job?",
-                "What is the pricing for PREMIUM_JOBS_SERVERLESS_COMPUTE_ASIA_SOUTHEAST?",
+                "Please provide the total expenditure for April 2025 and explain the purpose of the Databricks Job.",
+                "Please help me forecast next year's total DBU expenditure and advise whether purchasing RI would be cost-effective."
             ]
             if select := st.pills(
                 "Sample", options, selection_mode="single", label_visibility='collapsed',
