@@ -1,1 +1,3 @@
-# databricks-billing
+# Databricks Billing
+
+![image](/assets/architecture.gif)
