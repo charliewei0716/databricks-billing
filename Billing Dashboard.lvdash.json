@@ -1,5 +1,26 @@
 {
   "datasets" : [ {
+    "name" : "c52751af",
+    "displayName" : "job_infra",
+    "query" : "WITH\r\nusage_job AS (\r\n    SELECT usage_date, workspace_id, usage_metadata.job_id AS job_id, usage_quantity, sku_name, usage_unit\r\n    FROM system.billing.usage\r\n    WHERE billing_origin_product = 'JOBS'\r\n    AND product_features.is_serverless = FALSE\r\n    AND usage_date BETWEEN :param_date.min AND :param_date.max\r\n    GROUP BY ALL\r\n),\r\nlist_prices AS (\r\n    SELECT\r\n        price_start_time,\r\n        COALESCE(price_end_time, DATE_ADD(CURRENT_DATE, 1)) AS price_end_time,\r\n        sku_name,\r\n        usage_unit,\r\n        pricing.effective_list.default AS pricing\r\n    FROM system.billing.list_prices\r\n    WHERE currency_code = 'USD'\r\n),\r\ndbu AS (\r\n    SELECT u.usage_date, u.workspace_id, u.job_id, '1.DBU' AS meter_category, u.usage_quantity*p.pricing AS cost\r\n    FROM usage_job AS u\r\n    LEFT JOIN list_prices AS p\r\n        ON u.sku_name = p.sku_name\r\n        AND u.usage_unit = p.usage_unit\r\n        AND u.usage_date BETWEEN p.price_start_time AND p.price_end_time\r\n),\r\nazure AS (\r\n    SELECT\r\n        usage_date,\r\n        workspace_id,\r\n        job_id,\r\n        CASE\r\n            WHEN meter_category = 'Virtual Machines' THEN '2.Virtual Machines'\r\n            WHEN meter_category = 'Storage' THEN '3.Storage'\r\n            WHEN meter_category = 'Bandwidth' THEN '4.Bandwidth'\r\n        END AS meter_category,\r\n        cost\r\n    FROM main.billing.azure_cost\r\n    WHERE usage_date BETWEEN :param_date.min AND :param_date.max\r\n)\r\nSELECT * FROM dbu\r\nUNION ALL\r\nSELECT * FROM azure",
+    "parameters" : [ {
+      "displayName" : "param_date",
+      "keyword" : "param_date",
+      "dataType" : "DATE",
+      "complexType" : "RANGE",
+      "defaultSelection" : {
+        "range" : {
+          "dataType" : "DATE",
+          "min" : {
+            "value" : "now-1M/M"
+          },
+          "max" : {
+            "value" : "now/M"
+          }
+        }
+      }
+    } ]
+  }, {
     "name" : "3b712858",
     "displayName" : "select_workspace_id",
     "query" : "SELECT DISTINCT(workspace_id)\r\nFROM system.billing.usage\r\nWHERE usage_date BETWEEN :param_date.min AND :param_date.max",
@@ -54,46 +75,9 @@
       }
     } ]
   }, {
-    "name" : "f0a35edb",
-    "displayName" : "forecast",
-    "query" : "WITH\r\nusage AS (\r\n    SELECT workspace_id, sku_name, usage_unit, usage_date, usage_quantity, billing_origin_product\r\n    FROM system.billing.usage\r\n    WHERE DATEDIFF(CURRENT_DATE, usage_date) < 70\r\n    -- AND workspace_id = '1195525497516230'\r\n    -- AND billing_origin_product = 'JOBS'\r\n),\r\nlist_prices AS (\r\n    SELECT\r\n        price_start_time,\r\n        COALESCE(price_end_time, DATE_ADD(CURRENT_DATE, 1)) AS price_end_time,\r\n        sku_name,\r\n        usage_unit,\r\n        pricing.effective_list.default AS pricing\r\n    FROM system.billing.list_prices\r\n    WHERE currency_code = 'USD'\r\n),\r\nactual_cost AS (\r\n    SELECT u.workspace_id, u.sku_name, u.usage_date, u.billing_origin_product, SUM(u.usage_quantity*p.pricing) AS cost\r\n    FROM usage AS u\r\n    LEFT JOIN list_prices AS p\r\n        ON u.sku_name = p.sku_name\r\n        AND u.usage_unit = p.usage_unit\r\n        AND u.usage_date BETWEEN p.price_start_time AND p.price_end_time\r\n    GROUP BY ALL\r\n),\r\ncategory AS (\r\n    SELECT DISTINCT workspace_id, sku_name, billing_origin_product FROM usage\r\n),\r\ncategory_with_date AS (\r\n    SELECT date_col.usage_date, category.* FROM category\r\n    CROSS JOIN\r\n    (\r\n      SELECT EXPLODE(SEQUENCE(\r\n        (SELECT MAX(usage_date) FROM usage), (SELECT MIN(usage_date) FROM usage)\r\n      )) AS usage_date\r\n    ) AS date_col\r\n),\r\ntraining AS (\r\n    SELECT category_with_date.*, COALESCE(actual_cost.cost, 0) AS cost FROM category_with_date\r\n    LEFT JOIN actual_cost USING (usage_date, workspace_id, sku_name, billing_origin_product)\r\n),\r\ntraining_with_max AS (\r\n    SELECT *, MAX(cost) OVER (PARTITION BY workspace_id, sku_name, billing_origin_product) AS max_cost FROM training\r\n),\r\ntraining_with_params AS (\r\n    SELECT \r\n        '{\"global_floor\": 0, \"global_cap\": ' || (max_cost*2) || '}' AS parameters,\r\n        workspace_id,\r\n        sku_name,\r\n        usage_date,\r\n        billing_origin_product,\r\n        cost\r\n    FROM training_with_max\r\n),\r\nforecast_cost AS (\r\n    SELECT * FROM AI_FORECAST(\r\n        TABLE(training_with_params),\r\n        horizon => (CURRENT_DATE + INTERVAL 40 DAYS),\r\n        time_col => 'usage_date',\r\n        value_col => 'cost',\r\n        group_col => ARRAY('workspace_id', 'billing_origin_product', 'sku_name'),\r\n        prediction_interval_width => 0.9,\r\n        frequency => 'D',\r\n        seed => 666,\r\n        parameters => 'parameters'\r\n    )\r\n),\r\nall_cost AS (\r\n    SELECT\r\n        workspace_id,\r\n        sku_name,\r\n        usage_date,\r\n        billing_origin_product,\r\n        NULL AS cost,\r\n        GREATEST(0, cost_forecast) AS cost_forecast,\r\n        GREATEST(0, cost_upper) AS cost_upper,\r\n        GREATEST(0, cost_lower) AS cost_lower\r\n    FROM forecast_cost\r\n    UNION\r\n    SELECT\r\n        workspace_id,\r\n        sku_name,\r\n        usage_date,\r\n        billing_origin_product,\r\n        cost,\r\n        NULL AS cost_forecast,\r\n        NULL AS cost_upper,\r\n        NULL AS cost_lower\r\n    FROM training\r\n)\r\nSELECT \r\n    *,\r\n    CASE  \r\n        WHEN DATEDIFF(MONTH, DATE_TRUNC('MONTH', usage_date), DATE_TRUNC('MONTH', CURRENT_DATE)) = 0 THEN 'this'\r\n        WHEN DATEDIFF(MONTH, DATE_TRUNC('MONTH', usage_date), DATE_TRUNC('MONTH', CURRENT_DATE)) = -1 THEN 'next'  \r\n        WHEN DATEDIFF(MONTH, DATE_TRUNC('MONTH', usage_date), DATE_TRUNC('MONTH', CURRENT_DATE)) = 1 THEN 'last'  \r\n        ELSE 'other'  \r\n    END AS month,\r\n    COALESCE(cost, cost_forecast) AS total,\r\n    DATE_FORMAT(usage_date, 'yyyy MMMM') AS month_text\r\nFROM all_cost"
-  }, {
-    "name" : "c52751af",
-    "displayName" : "未命名的資料集 1",
-    "query" : "WITH\r\nusage_job AS (\r\n    SELECT usage_date, workspace_id, usage_metadata.job_id AS job_id, usage_quantity, sku_name, usage_unit\r\n    FROM system.billing.usage\r\n    WHERE billing_origin_product = 'JOBS'\r\n    AND product_features.is_serverless = FALSE\r\n    AND usage_date BETWEEN :param_date.min AND :param_date.max\r\n    GROUP BY ALL\r\n),\r\nlist_prices AS (\r\n    SELECT\r\n        price_start_time,\r\n        COALESCE(price_end_time, DATE_ADD(CURRENT_DATE, 1)) AS price_end_time,\r\n        sku_name,\r\n        usage_unit,\r\n        pricing.effective_list.default AS pricing\r\n    FROM system.billing.list_prices\r\n    WHERE currency_code = 'USD'\r\n),\r\ndbu AS (\r\n    SELECT u.usage_date, u.workspace_id, u.job_id, '1.DBU' AS meter_category, u.usage_quantity*p.pricing AS cost\r\n    FROM usage_job AS u\r\n    LEFT JOIN list_prices AS p\r\n        ON u.sku_name = p.sku_name\r\n        AND u.usage_unit = p.usage_unit\r\n        AND u.usage_date BETWEEN p.price_start_time AND p.price_end_time\r\n),\r\nazure AS (\r\n    SELECT\r\n        usage_date,\r\n        workspace_id,\r\n        job_id,\r\n        CASE\r\n            WHEN meter_category = 'Virtual Machines' THEN '2.Virtual Machines'\r\n            WHEN meter_category = 'Storage' THEN '3.Storage'\r\n            WHEN meter_category = 'Bandwidth' THEN '4.Bandwidth'\r\n        END AS meter_category,\r\n        cost\r\n    FROM main.billing.azure_cost\r\n    WHERE usage_date BETWEEN :param_date.min AND :param_date.max\r\n)\r\nSELECT * FROM dbu\r\nUNION ALL\r\nSELECT * FROM azure\r\n-- azure_summy AS (\r\n--     SELECT\r\n--         usage_date,\r\n--         job_id,\r\n--         SUM(CASE WHEN meter_category = 'Bandwidth' THEN cost ELSE NULL END) AS Bandwidth,\r\n--         SUM(CASE WHEN meter_category = 'Storage' THEN cost ELSE NULL END) AS Storage,\r\n--         SUM(CASE WHEN meter_category = 'Virtual Machines' THEN cost ELSE NULL END) AS Virtual_Machines\r\n--     FROM main.billing.azure_cost\r\n--     GROUP BY usage_date, job_id\r\n-- )\r\n-- SELECT u.*, a.Bandwidth, a.Storage, a.Virtual_Machines\r\n-- FROM usage_job u\r\n-- LEFT JOIN azure_summy a\r\n-- ON u.usage_date = a.usage_date\r\n-- AND u.job_id = a.job_id",
-    "parameters" : [ {
-      "displayName" : "param_date",
-      "keyword" : "param_date",
-      "dataType" : "DATE",
-      "complexType" : "RANGE",
-      "defaultSelection" : {
-        "range" : {
-          "dataType" : "DATE",
-          "min" : {
-            "value" : "now-1M/M"
-          },
-          "max" : {
-            "value" : "now/M"
-          }
-        }
-      }
-    } ]
-  }, {
-    "name" : "905352b3",
-    "displayName" : "未命名的資料集 2",
-    "query" : "SELECT DISTINCT sku_name\r\nFROM system.billing.usage\r\nWHERE billing_origin_product = 'JOBS'\r\nAND product_features.is_serverless = FALSE"
-  }, {
-    "name" : "b40c2b8d",
-    "displayName" : "未命名的資料集 3",
-    "query" : "SELECT * FROM system.billing.usage"
-  }, {
     "name" : "e8361a4c",
-    "displayName" : "forecast_summary",
-    "query" : "WITH\r\nusage AS (\r\n    SELECT workspace_id, sku_name, usage_unit, usage_date, usage_quantity, billing_origin_product\r\n    FROM system.billing.usage\r\n    WHERE DATEDIFF(CURRENT_DATE, usage_date) < 60\r\n),\r\nlist_prices AS (\r\n    SELECT\r\n        price_start_time,\r\n        COALESCE(price_end_time, DATE_ADD(CURRENT_DATE, 1)) AS price_end_time,\r\n        sku_name,\r\n        usage_unit,\r\n        pricing.effective_list.default AS pricing\r\n    FROM system.billing.list_prices\r\n    WHERE currency_code = 'USD'\r\n),\r\nactual_cost AS (\r\n    SELECT u.workspace_id, u.sku_name, u.usage_date, u.billing_origin_product, SUM(u.usage_quantity*p.pricing) AS cost\r\n    FROM usage AS u\r\n    LEFT JOIN list_prices AS p\r\n        ON u.sku_name = p.sku_name\r\n        AND u.usage_unit = p.usage_unit\r\n        AND u.usage_date BETWEEN p.price_start_time AND p.price_end_time\r\n    GROUP BY ALL\r\n),\r\nactual_cost_with_max AS (\r\n    SELECT *, MAX(cost) OVER (PARTITION BY workspace_id, sku_name, billing_origin_product) AS max_cost FROM actual_cost\r\n),\r\nactual_cost_with_params AS (\r\n    SELECT \r\n        '{\"global_floor\": 0, \"global_cap\": ' || (max_cost*2) || '}' AS parameters,\r\n        workspace_id,\r\n        sku_name,\r\n        usage_date,\r\n        billing_origin_product,\r\n        cost\r\n    FROM actual_cost_with_max\r\n),\r\nforecast_cost AS (\r\n    SELECT * FROM AI_FORECAST(\r\n        TABLE(actual_cost_with_params),\r\n        horizon => (CURRENT_DATE + INTERVAL 40 DAYS),\r\n        time_col => 'usage_date',\r\n        value_col => 'cost',\r\n        group_col => ARRAY('workspace_id', 'billing_origin_product', 'sku_name'),\r\n        prediction_interval_width => 0.8,\r\n        frequency => 'D',\r\n        seed => 666,\r\n        parameters => 'parameters'\r\n    )\r\n    WHERE usage_date > CURRENT_DATE\r\n),\r\nall_cost AS (\r\n    SELECT\r\n        workspace_id, sku_name, usage_date, billing_origin_product, GREATEST(0, cost_forecast) AS cost\r\n    FROM forecast_cost\r\n    UNION\r\n    SELECT\r\n        workspace_id, sku_name, usage_date, billing_origin_product, cost\r\n    FROM actual_cost\r\n)\r\nSELECT \r\n    *, prior_month FROM all_cost\r\n"
-  }, {
-    "name" : "01064fc7",
-    "displayName" : "未命名的資料集 4",
-    "query" : "SELECT DATE_FORMAT(CURRENT_DATE, 'yyyy MMM')"
+    "displayName" : "forecast",
+    "query" : "WITH\r\nusage AS (\r\n    SELECT usage_date, sku_name, usage_unit, usage_quantity\r\n    FROM system.billing.usage\r\n    WHERE usage_date >= '2025-01-01'\r\n),\r\nprices AS (\r\n    SELECT\r\n        price_start_time,\r\n        COALESCE(price_end_time, DATE_ADD(CURRENT_DATE, 1)) AS price_end_time,\r\n        sku_name,\r\n        usage_unit,\r\n        pricing.effective_list.default AS pricing\r\n    FROM system.billing.list_prices\r\n    WHERE currency_code = 'USD'\r\n),\r\ndbu_cost AS (\r\n    SELECT u.usage_date, 'DBU' AS sku, SUM(u.usage_quantity*p.pricing) AS cost\r\n    FROM usage AS u\r\n    LEFT JOIN prices AS p\r\n        ON u.sku_name = p.sku_name\r\n        AND u.usage_unit = p.usage_unit\r\n        AND u.usage_date BETWEEN p.price_start_time AND p.price_end_time\r\n    GROUP BY 1\r\n),\r\nazure_cost AS (\r\n    SELECT usage_date, 'Virtual Machines' AS sku, SUM(cost) AS cost\r\n    FROM main.billing.azure_cost\r\n    WHERE meter_category = 'Virtual Machines'\r\n    AND usage_date >= '2025-01-01'\r\n    GROUP BY 1\r\n)\r\nSELECT *, NULL AS cost_forecast, NULL AS cost_upper, NULL AS cost_lower FROM azure_cost\r\nUNION ALL\r\nSELECT *, NULL AS cost_forecast, NULL AS cost_upper, NULL AS cost_lower FROM dbu_cost\r\nUNION ALL\r\nSELECT usage_date, sku, NULL AS cost, cost_forecast, cost_upper, cost_lower\r\nFROM main.billing.forecast\r\nWHERE usage_date > CURRENT_DATE"
   } ],
   "pages" : [ {
     "name" : "101f5240",
@@ -422,7 +406,7 @@
       "widget" : {
         "name" : "6107a09f",
         "queries" : [ {
-          "name" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e35c121776acf407e9343161d3_workspace_id",
+          "name" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f0298b104413c9af99ea65281cab86_workspace_id",
           "query" : {
             "datasetName" : "c52751af",
             "fields" : [ {
@@ -442,7 +426,7 @@
             "fields" : [ {
               "fieldName" : "workspace_id",
               "displayName" : "workspace_id",
-              "queryName" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e35c121776acf407e9343161d3_workspace_id"
+              "queryName" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f0298b104413c9af99ea65281cab86_workspace_id"
             } ]
           },
           "frame" : {
@@ -712,6 +696,18 @@
               "scale" : {
                 "type" : "quantitative"
               },
+              "axis" : {
+                "hideTitle" : true
+              },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              },
               "displayName" : "Sum of cost"
             },
             "color" : {
@@ -719,16 +715,20 @@
               "scale" : {
                 "type" : "categorical"
               },
-              "displayName" : "workspace_id"
+              "displayName" : "Workspace"
             }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Proportional Breakdown by Workspace"
           }
         }
       },
       "position" : {
         "x" : 0,
-        "y" : 6,
+        "y" : 8,
         "width" : 2,
-        "height" : 5
+        "height" : 6
       }
     }, {
       "widget" : {
@@ -738,6 +738,9 @@
           "query" : {
             "datasetName" : "f828a60c",
             "fields" : [ {
+              "name" : "billing_origin_product",
+              "expression" : "`billing_origin_product`"
+            }, {
               "name" : "daily(usage_date)",
               "expression" : "DATE_TRUNC(\"DAY\", `usage_date`)"
             }, {
@@ -749,7 +752,7 @@
         } ],
         "spec" : {
           "version" : 3,
-          "widgetType" : "line",
+          "widgetType" : "bar",
           "encodings" : {
             "x" : {
               "fieldName" : "daily(usage_date)",
@@ -758,6 +761,11 @@
               },
               "axis" : {
                 "hideTitle" : true
+              },
+              "format" : {
+                "type" : "date",
+                "date" : "locale-short-month",
+                "leadingZeros" : true
               },
               "displayName" : "usage_date"
             },
@@ -769,8 +777,31 @@
               "axis" : {
                 "hideTitle" : true
               },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              },
               "displayName" : "Sum of cost"
+            },
+            "color" : {
+              "fieldName" : "billing_origin_product",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "legend" : {
+                "hideTitle" : true
+              },
+              "displayName" : "billing_origin_product"
             }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Daily Cost Breakdown by Product"
           }
         }
       },
@@ -778,7 +809,7 @@
         "x" : 0,
         "y" : 2,
         "width" : 6,
-        "height" : 4
+        "height" : 6
       }
     }, {
       "widget" : {
@@ -806,6 +837,18 @@
               "scale" : {
                 "type" : "quantitative"
               },
+              "axis" : {
+                "hideTitle" : true
+              },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              },
               "displayName" : "Sum of cost"
             },
             "color" : {
@@ -813,16 +856,23 @@
               "scale" : {
                 "type" : "categorical"
               },
-              "displayName" : "sku_name"
+              "legend" : {
+                "hideTitle" : true
+              },
+              "displayName" : "SKU"
             }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Proportional Breakdown by SKU"
           }
         }
       },
       "position" : {
         "x" : 2,
-        "y" : 6,
+        "y" : 8,
         "width" : 2,
-        "height" : 5
+        "height" : 6
       }
     }, {
       "widget" : {
@@ -832,8 +882,8 @@
           "query" : {
             "datasetName" : "f828a60c",
             "fields" : [ {
-              "name" : "countdistinct(cost)",
-              "expression" : "COUNT(DISTINCT `cost`)"
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
             }, {
               "name" : "billing_origin_product",
               "expression" : "`billing_origin_product`"
@@ -846,58 +896,46 @@
           "widgetType" : "pie",
           "encodings" : {
             "angle" : {
-              "fieldName" : "countdistinct(cost)",
+              "fieldName" : "sum(cost)",
               "scale" : {
                 "type" : "quantitative"
               },
-              "displayName" : "Count of Unique cost"
+              "axis" : {
+                "hideTitle" : true
+              },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              },
+              "displayName" : "Sum of cost"
             },
             "color" : {
               "fieldName" : "billing_origin_product",
               "scale" : {
                 "type" : "categorical"
               },
+              "legend" : {
+                "hideTitle" : true
+              },
               "displayName" : "billing_origin_product"
             }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Proportional Breakdown by Product"
           }
         }
       },
       "position" : {
         "x" : 4,
-        "y" : 6,
+        "y" : 8,
         "width" : 2,
-        "height" : 5
-      }
-    }, {
-      "widget" : {
-        "name" : "781a384e",
-        "queries" : [ {
-          "name" : "main_query",
-          "query" : {
-            "datasetName" : "f828a60c",
-            "fields" : [ {
-              "name" : "sum(cost)",
-              "expression" : "SUM(`cost`)"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "counter",
-          "encodings" : {
-            "value" : {
-              "fieldName" : "sum(cost)",
-              "displayName" : "Sum of cost"
-            }
-          }
-        }
-      },
-      "position" : {
-        "x" : 0,
-        "y" : 0,
-        "width" : 2,
-        "height" : 2
+        "height" : 6
       }
     }, {
       "widget" : {
@@ -919,8 +957,21 @@
           "encodings" : {
             "value" : {
               "fieldName" : "sum(cost)",
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              },
               "displayName" : "Sum of cost"
             }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Total DBU Cost"
           }
         }
       },
@@ -930,149 +981,46 @@
         "width" : 2,
         "height" : 2
       }
-    } ]
-  }, {
-    "name" : "d67288d2",
-    "displayName" : "Forecast",
-    "layout" : [ {
+    }, {
       "widget" : {
-        "name" : "89b7aa26",
-        "queries" : [ {
-          "name" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f024d334be1834b356b33276bbd10e_workspace_id",
-          "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "workspace_id",
-              "expression" : "`workspace_id`"
-            }, {
-              "name" : "workspace_id_associativity",
-              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "filter-multi-select",
-          "encodings" : {
-            "fields" : [ {
-              "fieldName" : "workspace_id",
-              "displayName" : "workspace_id",
-              "queryName" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f024d334be1834b356b33276bbd10e_workspace_id"
-            } ]
-          },
-          "frame" : {
-            "showTitle" : true,
-            "title" : "Workspace"
-          }
-        }
+        "name" : "5e277c22",
+        "textbox_spec" : "# Databricks DBU Costs"
       },
       "position" : {
         "x" : 0,
         "y" : 0,
         "width" : 2,
-        "height" : 1
+        "height" : 2
       }
-    }, {
+    } ]
+  }, {
+    "name" : "fef11bd1",
+    "displayName" : "Forecast",
+    "layout" : [ {
       "widget" : {
-        "name" : "6b0cbb7a",
-        "queries" : [ {
-          "name" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f024d334be1834b356b33276bbd10e_billing_origin_product",
-          "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "billing_origin_product",
-              "expression" : "`billing_origin_product`"
-            }, {
-              "name" : "billing_origin_product_associativity",
-              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "filter-multi-select",
-          "encodings" : {
-            "fields" : [ {
-              "fieldName" : "billing_origin_product",
-              "displayName" : "billing_origin_product",
-              "queryName" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f024d334be1834b356b33276bbd10e_billing_origin_product"
-            } ]
-          },
-          "frame" : {
-            "showTitle" : true,
-            "title" : "Product"
-          }
-        }
-      },
-      "position" : {
-        "x" : 2,
-        "y" : 0,
-        "width" : 2,
-        "height" : 1
-      }
-    }, {
-      "widget" : {
-        "name" : "6fead3c5",
-        "queries" : [ {
-          "name" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f024d334be1834b356b33276bbd10e_sku_name",
-          "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "sku_name",
-              "expression" : "`sku_name`"
-            }, {
-              "name" : "sku_name_associativity",
-              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "filter-multi-select",
-          "encodings" : {
-            "fields" : [ {
-              "fieldName" : "sku_name",
-              "displayName" : "sku_name",
-              "queryName" : "dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f024d334be1834b356b33276bbd10e_sku_name"
-            } ]
-          },
-          "frame" : {
-            "showTitle" : true,
-            "title" : "SKU"
-          }
-        }
-      },
-      "position" : {
-        "x" : 4,
-        "y" : 0,
-        "width" : 2,
-        "height" : 1
-      }
-    }, {
-      "widget" : {
-        "name" : "24a5ecdd",
+        "name" : "5e478174",
         "queries" : [ {
           "name" : "main_query",
           "query" : {
-            "datasetName" : "f0a35edb",
+            "datasetName" : "e8361a4c",
             "fields" : [ {
-              "name" : "daily(usage_date)",
-              "expression" : "DATE_TRUNC(\"DAY\", `usage_date`)"
-            }, {
-              "name" : "sum(cost_forecast)",
-              "expression" : "SUM(`cost_forecast`)"
+              "name" : "weekly(usage_date)",
+              "expression" : "DATE_TRUNC(\"WEEK\", `usage_date`)"
             }, {
               "name" : "sum(cost)",
               "expression" : "SUM(`cost`)"
+            }, {
+              "name" : "sum(cost_forecast)",
+              "expression" : "SUM(`cost_forecast`)"
             }, {
               "name" : "sum(cost_upper)",
               "expression" : "SUM(`cost_upper`)"
             }, {
               "name" : "sum(cost_lower)",
               "expression" : "SUM(`cost_lower`)"
+            } ],
+            "filters" : [ {
+              "expression" : "`sku` IN ('DBU')"
             } ],
             "disaggregated" : false
           }
@@ -1082,29 +1030,34 @@
           "widgetType" : "combo",
           "encodings" : {
             "x" : {
-              "fieldName" : "daily(usage_date)",
+              "fieldName" : "weekly(usage_date)",
               "scale" : {
                 "type" : "temporal"
               },
               "axis" : {
                 "hideTitle" : true
               },
+              "format" : {
+                "type" : "date",
+                "date" : "locale-short-month",
+                "leadingZeros" : true
+              },
               "displayName" : "usage_date"
             },
             "color" : {
               "legend" : {
-                "hideTitle" : true,
-                "position" : "bottom"
+                "position" : "bottom",
+                "hideTitle" : true
               }
             },
             "y" : {
               "primary" : {
                 "fields" : [ {
-                  "fieldName" : "sum(cost_forecast)",
-                  "displayName" : "Forecasted costs"
-                }, {
                   "fieldName" : "sum(cost)",
-                  "displayName" : "Actual costs"
+                  "displayName" : "Actual Costs"
+                }, {
+                  "fieldName" : "sum(cost_forecast)",
+                  "displayName" : "Forecasted Costs"
                 } ]
               },
               "secondary" : {
@@ -1133,8 +1086,13 @@
               }
             }
           },
+          "frame" : {
+            "showDescription" : false,
+            "showTitle" : true,
+            "title" : "Weekly Comparison of Actual and Forecasted DBU Costs"
+          },
           "mark" : {
-            "colors" : [ "#919191", "#077A9D", "#FFAB00", "#FFAB00", {
+            "colors" : [ "#ff3621", "#eeede9", "#1b3139", "#1b3139", {
               "themeColorType" : "visualizationColors",
               "position" : 5
             }, {
@@ -1153,264 +1111,148 @@
               "themeColorType" : "visualizationColors",
               "position" : 10
             } ]
-          },
-          "frame" : {
-            "showTitle" : true,
-            "title" : "Cost from 70 Days Before to 40 Days After Today"
           }
         }
       },
       "position" : {
         "x" : 0,
-        "y" : 4,
+        "y" : 3,
         "width" : 6,
-        "height" : 7
+        "height" : 6
       }
     }, {
       "widget" : {
-        "name" : "82bfbab7",
+        "name" : "25ede6ca",
         "queries" : [ {
           "name" : "main_query",
           "query" : {
-            "datasetName" : "f0a35edb",
+            "datasetName" : "e8361a4c",
             "fields" : [ {
-              "name" : "month_text",
-              "expression" : "`month_text`"
+              "name" : "weekly(usage_date)",
+              "expression" : "DATE_TRUNC(\"WEEK\", `usage_date`)"
+            }, {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            }, {
+              "name" : "sum(cost_forecast)",
+              "expression" : "SUM(`cost_forecast`)"
+            }, {
+              "name" : "sum(cost_upper)",
+              "expression" : "SUM(`cost_upper`)"
+            }, {
+              "name" : "sum(cost_lower)",
+              "expression" : "SUM(`cost_lower`)"
             } ],
             "filters" : [ {
-              "expression" : "`month` IN ('last')"
+              "expression" : "`sku` IN ('Virtual Machines')"
             } ],
-            "disaggregated" : true
+            "disaggregated" : false
           }
         } ],
         "spec" : {
-          "version" : 2,
-          "widgetType" : "counter",
+          "version" : 1,
+          "widgetType" : "combo",
           "encodings" : {
-            "value" : {
-              "fieldName" : "month_text",
-              "displayName" : "month_text"
+            "x" : {
+              "fieldName" : "weekly(usage_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "format" : {
+                "type" : "date",
+                "date" : "locale-short-month",
+                "leadingZeros" : true
+              },
+              "displayName" : "usage_date"
+            },
+            "color" : {
+              "legend" : {
+                "position" : "bottom",
+                "hideTitle" : true
+              }
+            },
+            "y" : {
+              "primary" : {
+                "fields" : [ {
+                  "fieldName" : "sum(cost)",
+                  "displayName" : "Actual Costs"
+                }, {
+                  "fieldName" : "sum(cost_forecast)",
+                  "displayName" : "Forecasted Costs"
+                } ]
+              },
+              "secondary" : {
+                "fields" : [ {
+                  "fieldName" : "sum(cost_upper)",
+                  "displayName" : "Upper bound of the forecasted costs"
+                }, {
+                  "fieldName" : "sum(cost_lower)",
+                  "displayName" : "Lower bound of the forecasted costs"
+                } ]
+              },
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "axis" : {
+                "hideTitle" : true
+              },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              }
             }
           },
           "frame" : {
-            "showTitle" : false,
-            "title" : ""
+            "showTitle" : true,
+            "title" : "Weekly Comparison of Actual and Forecasted VM Costs"
+          },
+          "mark" : {
+            "colors" : [ "#ff3621", "#eeede9", "#1b3139", "#1b3139", {
+              "themeColorType" : "visualizationColors",
+              "position" : 5
+            }, {
+              "themeColorType" : "visualizationColors",
+              "position" : 6
+            }, {
+              "themeColorType" : "visualizationColors",
+              "position" : 7
+            }, {
+              "themeColorType" : "visualizationColors",
+              "position" : 8
+            }, {
+              "themeColorType" : "visualizationColors",
+              "position" : 9
+            }, {
+              "themeColorType" : "visualizationColors",
+              "position" : 10
+            } ]
           }
         }
       },
       "position" : {
         "x" : 0,
-        "y" : 1,
-        "width" : 1,
-        "height" : 1
+        "y" : 11,
+        "width" : 6,
+        "height" : 6
       }
     }, {
       "widget" : {
-        "name" : "c7404fc6",
+        "name" : "4187489c",
         "queries" : [ {
           "name" : "main_query",
           "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "sum(cost)",
-              "expression" : "SUM(`cost`)"
-            } ],
-            "filters" : [ {
-              "expression" : "`month` IN ('last')"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "counter",
-          "encodings" : {
-            "value" : {
-              "fieldName" : "sum(cost)",
-              "format" : {
-                "type" : "number-currency",
-                "currencyCode" : "USD",
-                "abbreviation" : "compact",
-                "decimalPlaces" : {
-                  "type" : "max",
-                  "places" : 2
-                }
-              },
-              "style" : {
-                "bold" : true
-              },
-              "displayName" : "Sum of cost"
-            }
-          },
-          "frame" : {
-            "showTitle" : true,
-            "showDescription" : true,
-            "title" : "Prior full month",
-            "description" : "Actual total cost"
-          }
-        }
-      },
-      "position" : {
-        "x" : 0,
-        "y" : 2,
-        "width" : 1,
-        "height" : 2
-      }
-    }, {
-      "widget" : {
-        "name" : "632155d7",
-        "queries" : [ {
-          "name" : "main_query",
-          "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "month_text",
-              "expression" : "`month_text`"
-            } ],
-            "filters" : [ {
-              "expression" : "`month` IN ('last', 'this')"
-            } ],
-            "disaggregated" : true
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "counter",
-          "encodings" : {
-            "value" : {
-              "fieldName" : "month_text",
-              "displayName" : "month_text"
-            }
-          },
-          "frame" : {
-            "showTitle" : false,
-            "title" : ""
-          }
-        }
-      },
-      "position" : {
-        "x" : 1,
-        "y" : 1,
-        "width" : 4,
-        "height" : 1
-      }
-    }, {
-      "widget" : {
-        "name" : "ecf70c7d",
-        "queries" : [ {
-          "name" : "main_query",
-          "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "sum(cost)",
-              "expression" : "SUM(`cost`)"
-            } ],
-            "filters" : [ {
-              "expression" : "`month` IN ('this')"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "counter",
-          "encodings" : {
-            "value" : {
-              "fieldName" : "sum(cost)",
-              "format" : {
-                "type" : "number-currency",
-                "currencyCode" : "USD",
-                "abbreviation" : "compact",
-                "decimalPlaces" : {
-                  "type" : "max",
-                  "places" : 2
-                }
-              },
-              "style" : {
-                "bold" : true
-              },
-              "displayName" : "Sum of cost"
-            }
-          },
-          "frame" : {
-            "showTitle" : true,
-            "showDescription" : true,
-            "title" : "Current month",
-            "description" : "Actual cost incurred"
-          }
-        }
-      },
-      "position" : {
-        "x" : 1,
-        "y" : 2,
-        "width" : 2,
-        "height" : 2
-      }
-    }, {
-      "widget" : {
-        "name" : "b4b65b19",
-        "queries" : [ {
-          "name" : "main_query",
-          "query" : {
-            "datasetName" : "f0a35edb",
-            "fields" : [ {
-              "name" : "sum(total)",
-              "expression" : "SUM(`total`)"
-            } ],
-            "filters" : [ {
-              "expression" : "`month` IN ('this')"
-            } ],
-            "disaggregated" : false
-          }
-        } ],
-        "spec" : {
-          "version" : 2,
-          "widgetType" : "counter",
-          "encodings" : {
-            "value" : {
-              "fieldName" : "sum(total)",
-              "format" : {
-                "type" : "number-currency",
-                "currencyCode" : "USD",
-                "abbreviation" : "compact",
-                "decimalPlaces" : {
-                  "type" : "max",
-                  "places" : 2
-                }
-              },
-              "style" : {
-                "bold" : true
-              },
-              "displayName" : "Sum of total"
-            }
-          },
-          "frame" : {
-            "showTitle" : true,
-            "showDescription" : true,
-            "title" : "Current month",
-            "description" : "Forecasted total cost"
-          }
-        }
-      },
-      "position" : {
-        "x" : 3,
-        "y" : 2,
-        "width" : 2,
-        "height" : 2
-      }
-    }, {
-      "widget" : {
-        "name" : "8a6aaa12",
-        "queries" : [ {
-          "name" : "main_query",
-          "query" : {
-            "datasetName" : "f0a35edb",
+            "datasetName" : "e8361a4c",
             "fields" : [ {
               "name" : "sum(cost_forecast)",
               "expression" : "SUM(`cost_forecast`)"
             } ],
             "filters" : [ {
-              "expression" : "`month` IN ('next')"
+              "expression" : "`sku` IN ('DBU')"
             } ],
             "disaggregated" : false
           }
@@ -1421,6 +1263,68 @@
           "encodings" : {
             "value" : {
               "fieldName" : "sum(cost_forecast)",
+              "style" : {
+                "bold" : true
+              },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "none",
+                "decimalPlaces" : {
+                  "type" : "exact",
+                  "places" : 2
+                },
+                "hideGroupSeparator" : false
+              },
+              "displayName" : "Sum of cost_forecast"
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Total Forecasted DBU Cost for the Next 12 Months"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 1,
+        "width" : 3,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "be86f48f",
+        "textbox_spec" : "## Forecasted Databricks DBU & VM Costs"
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 0,
+        "width" : 6,
+        "height" : 1
+      }
+    }, {
+      "widget" : {
+        "name" : "147dc0bf",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "e8361a4c",
+            "fields" : [ {
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
+            } ],
+            "filters" : [ {
+              "expression" : "`sku` IN ('DBU')"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "counter",
+          "encodings" : {
+            "value" : {
+              "fieldName" : "sum(cost)",
               "format" : {
                 "type" : "number-currency",
                 "currencyCode" : "USD",
@@ -1433,38 +1337,58 @@
               "style" : {
                 "bold" : true
               },
-              "displayName" : "Sum of cost_forecast"
+              "displayName" : "Sum of cost"
             }
           },
           "frame" : {
             "showTitle" : true,
-            "title" : "Next Month",
-            "showDescription" : true,
-            "description" : "Forecasted total cost"
+            "title" : "Total DBU Cost Incurred This Year"
           }
         }
       },
       "position" : {
-        "x" : 5,
-        "y" : 2,
+        "x" : 1,
+        "y" : 1,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "e2cb1c04",
+        "textbox_spec" : "# DBU"
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 1,
         "width" : 1,
         "height" : 2
       }
     }, {
       "widget" : {
-        "name" : "6883445b",
+        "name" : "64a1bef9",
+        "textbox_spec" : "# VM"
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 9,
+        "width" : 1,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "94743257",
         "queries" : [ {
           "name" : "main_query",
           "query" : {
-            "datasetName" : "f0a35edb",
+            "datasetName" : "e8361a4c",
             "fields" : [ {
-              "name" : "month_text",
-              "expression" : "`month_text`"
+              "name" : "sum(cost)",
+              "expression" : "SUM(`cost`)"
             } ],
             "filters" : [ {
-              "expression" : "`month` IN ('next')"
+              "expression" : "`sku` IN ('Virtual Machines')"
             } ],
-            "disaggregated" : true
+            "disaggregated" : false
           }
         } ],
         "spec" : {
@@ -1472,21 +1396,84 @@
           "widgetType" : "counter",
           "encodings" : {
             "value" : {
-              "fieldName" : "month_text",
-              "displayName" : "month_text"
+              "fieldName" : "sum(cost)",
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "compact",
+                "decimalPlaces" : {
+                  "type" : "max",
+                  "places" : 2
+                }
+              },
+              "style" : {
+                "bold" : true
+              },
+              "displayName" : "Sum of cost"
             }
           },
           "frame" : {
-            "showTitle" : false,
-            "title" : ""
+            "showTitle" : true,
+            "title" : "Total VM Cost Incurred This Year"
           }
         }
       },
       "position" : {
-        "x" : 5,
-        "y" : 1,
-        "width" : 1,
-        "height" : 1
+        "x" : 1,
+        "y" : 9,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "dc2cc862",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "e8361a4c",
+            "fields" : [ {
+              "name" : "sum(cost_forecast)",
+              "expression" : "SUM(`cost_forecast`)"
+            } ],
+            "filters" : [ {
+              "expression" : "`sku` IN ('Virtual Machines')"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "counter",
+          "encodings" : {
+            "value" : {
+              "fieldName" : "sum(cost_forecast)",
+              "style" : {
+                "bold" : true
+              },
+              "format" : {
+                "type" : "number-currency",
+                "currencyCode" : "USD",
+                "abbreviation" : "none",
+                "decimalPlaces" : {
+                  "type" : "exact",
+                  "places" : 2
+                },
+                "hideGroupSeparator" : false
+              },
+              "displayName" : "Sum of cost_forecast"
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Total Forecasted VM Cost for the Next 12 Months"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 9,
+        "width" : 3,
+        "height" : 2
       }
     } ]
   } ]
