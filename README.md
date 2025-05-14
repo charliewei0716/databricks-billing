@@ -2,7 +2,9 @@
 
 ![](https://img.shields.io/github/stars/charliewei0716/databricks-billing?style=social)
 
-This is a web application that integrates a [Databricks Dashboard](https://docs.databricks.com/aws/en/dashboards/) with a [Mosaic AI Agent](https://docs.databricks.com/aws/en/generative-ai/tutorials/agent-framework-notebook) chat interface. The billing dashboard serves as the main display, and it is generated using [Databricks System Tables](https://docs.databricks.com/aws/en/admin/system-tables/) and cloud infrastructure cost data as its sources. Additionally, a multi-agent assistant, built with [Databricks Genie](https://docs.databricks.com/aws/en/genie/) and [RAG](https://docs.databricks.com/aws/en/generative-ai/retrieval-augmented-generation), enables users to ask any questions about the dashboard in natural language and receive responses.
+This Databricks Billing Solution is a web application that integrates the Databricks Dashboard with the Mosaic AI Agent chat interface. It leverages Databricks System Tables and cloud infrastructure cost data as its data sources, presenting both DBU and infrastructure costs at the job-level. This optimizes the current issue in the official usage dashboards where cloud infrastructure costs are invisible.
+
+The same data also serves as a source for Genie, combining RAG based on the Databricks Documentation to build a multi-agent assistant. This enables the assistant to answer non-technical users’ questions about the dashboard in natural language, retrieve historical cost data from different perspectives, and ultimately provide RI purchase recommendations based on predicted DBU usage.
 
 ![image](/assets/app_ui.png)
 
