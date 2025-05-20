@@ -552,7 +552,8 @@
         "width" : 6,
         "height" : 1
       }
-    } ]
+    } ],
+    "pageType" : "PAGE_TYPE_CANVAS"
   }, {
     "name" : "ef5eb8e5",
     "displayName" : "DBU Overview",
@@ -560,7 +561,7 @@
       "widget" : {
         "name" : "80d6e7a0",
         "queries" : [ {
-          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020dddcad1ff8a84da86c4e61bf11_param_date",
+          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f02e4aa4811430bff88de272512d20_param_date",
           "query" : {
             "datasetName" : "3b712858",
             "parameters" : [ {
@@ -570,7 +571,7 @@
             "disaggregated" : false
           }
         }, {
-          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e3326b13c99cd5855f57661079_param_date",
+          "name" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f02e4aa481145bbc5880fc3c334f81_param_date",
           "query" : {
             "datasetName" : "f828a60c",
             "parameters" : [ {
@@ -586,10 +587,10 @@
           "encodings" : {
             "fields" : [ {
               "parameterName" : "param_date",
-              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020dddcad1ff8a84da86c4e61bf11_param_date"
+              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f02e4aa4811430bff88de272512d20_param_date"
             }, {
               "parameterName" : "param_date",
-              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f020e3326b13c99cd5855f57661079_param_date"
+              "queryName" : "parameter_dashboards/01f020ddcaef173d83c74386d1319b26/datasets/01f02e4aa481145bbc5880fc3c334f81_param_date"
             } ]
           },
           "selection" : {
@@ -597,10 +598,10 @@
               "range" : {
                 "dataType" : "DATE",
                 "min" : {
-                  "value" : "now-3M/M"
+                  "value" : "now/y"
                 },
                 "max" : {
-                  "value" : "now/M"
+                  "value" : "now/y"
                 }
               }
             }
@@ -992,7 +993,8 @@
         "width" : 2,
         "height" : 2
       }
-    } ]
+    } ],
+    "pageType" : "PAGE_TYPE_CANVAS"
   }, {
     "name" : "fef11bd1",
     "displayName" : "Forecast",
@@ -1475,6 +1477,7 @@
         "width" : 3,
         "height" : 2
       }
-    } ]
+    } ],
+    "pageType" : "PAGE_TYPE_CANVAS"
   } ]
 }
