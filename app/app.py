@@ -73,7 +73,7 @@ with st.sidebar:
         role = message["role"]
         with chat_window.chat_message(name=role, avatar=chat_avatar[role]):
             st.write(f"**{role.capitalize()}**")
-            st.write(message["content"])
+            st.write(message["content"].replace("$", r"\$"))
             if message.get("ans_from_docs"):
                 st.badge("**Answer from Databricks Document**", icon=":material/check:", color="green")
 
@@ -97,7 +97,7 @@ with st.sidebar:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_window.chat_message(name="user", avatar=chat_avatar["user"]):
             st.write("**User**")
-            st.write(prompt)
+            st.write(prompt.replace("$", r"\$"))
 
         with chat_window:
             with st.spinner("Thinking..", show_time=True):
@@ -125,7 +125,7 @@ with st.sidebar:
                     
                     with st.chat_message(name=role, avatar=chat_avatar[role]):
                         st.write(f"**{role.capitalize()}**")
-                        st.write(chunk.delta["content"])
+                        st.write(chunk.delta["content"].replace("$", r"\$"))
                         if role == "assistant" and from_docs:
                             st.badge("**Answer from Databricks Document**", icon=":material/check:", color="green")
                     
