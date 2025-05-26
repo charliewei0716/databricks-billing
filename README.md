@@ -2,7 +2,7 @@
 
 ![](https://img.shields.io/github/stars/charliewei0716/databricks-billing?style=social)
 [![](https://img.shields.io/badge/Canva-%2300C4CC.svg?style=flat&logo=Canva&logoColor=white)](https://www.canva.com/design/DAGm3DpC-O0/PcdvuG2gHSc_IM7UPTvwBw/view?utm_content=DAGm3DpC-O0&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h74567ebc80)
-![](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=flat&logo=YouTube&logoColor=white)
+[![](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=flat&logo=YouTube&logoColor=white)](https://youtu.be/pw4TPk3WHLY)
 
 This Databricks Billing Solution is a web application that integrates the [Databricks AI/BI Dashboard]([https://docs.databricks.com/aws/en/dashboards](https://docs.databricks.com/aws/en/ai-bi/#aibi-dashboards)) with the [Mosaic AI Agent](https://docs.databricks.com/aws/en/generative-ai/agent-framework/build-genai-apps#-mosaic-ai-agent-framework) chat interface. It leverages [Databricks System Tables](https://docs.databricks.com/aws/en/admin/system-tables/) and cloud infrastructure cost data as its data sources, presenting both DBU and infrastructure costs at the job-level. This optimizes the current issue in the official [usage dashboards](https://docs.databricks.com/aws/en/admin/account-settings/usage) where cloud infrastructure costs are invisible.
 
